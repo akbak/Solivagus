@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import './App.css';
 
 // Dil ve tema verilerini doğrudan kodun içinde tanımlıyoruz.
@@ -65,18 +65,33 @@ ${JSON.stringify(exampleScene, null, 2)}
 `;
 };
 
-
 function App() {
-  const [language, setLanguage] = useState(null); // 'tr', 'en', or null
+  const [language, setLanguage] = useState(null);
   const [currentTheme, setCurrentTheme] = useState('');
   const [gameState, setGameState] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
   const [isFading, setIsFading] = useState(false);
+  
+  const audioRef = useRef(null);
+  const [currentTrack, setCurrentTrack] = useState(1);
+
+  useEffect(() => {
+    if (audioRef.current) {
+        audioRef.current.src = `/Solivagus soundtrack ${currentTrack}.mp3`;
+        if (language) { // Sadece dil seçildiyse çalmayı dene
+            audioRef.current.play().catch(e => console.error("Audio play failed on track change:", e));
+        }
+    }
+  }, [currentTrack, language]);
+
+  const handleTrackEnded = () => {
+    setCurrentTrack(prevTrack => (prevTrack === 1 ? 2 : 1));
+  };
 
   const fetchNewScene = useCallback(async (lang, theme) => {
     setLoading(true);
-    setError(null);
+    setError('');
     const prompt = generatePrompt(lang, theme);
 
     try {
@@ -88,7 +103,7 @@ function App() {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Ollama Sunucu Hatası: ${response.status} - ${errorText}`);
+        throw new Error(`Ollama Server Error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
@@ -102,7 +117,7 @@ function App() {
 
     } catch (err) {
       console.error("Fetch error:", err);
-      setError(`Sahne yüklenemedi. Ollama'nın çalıştığından emin olun. Detay: ${err.message}`);
+      setError(`Failed to load scene. Make sure Ollama is running. Detail: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -114,13 +129,15 @@ function App() {
     const randomTheme = availableThemes[Math.floor(Math.random() * availableThemes.length)];
     setCurrentTheme(randomTheme);
     fetchNewScene(lang, randomTheme);
+    if (audioRef.current) {
+      audioRef.current.play().catch(e => console.error("Audio play failed on language select:", e));
+    }
   };
 
   const handleOptionClick = () => {
     setIsFading(true);
     setTimeout(() => {
       setGameState(null);
-      // Rastgele yeni bir tema seçerek devam et
       const availableThemes = Object.keys(themes[language]);
       const randomTheme = availableThemes[Math.floor(Math.random() * availableThemes.length)];
       setCurrentTheme(randomTheme);
@@ -132,11 +149,12 @@ function App() {
   const renderContent = () => {
     if (!language) {
       return (
-        <div className="language-selection">
-          <h1>Choose a language</h1>
-          <div className="options">
-            <button className="option-button" onClick={() => handleLanguageSelect('tr')}>Türkçe</button>
-            <button className="option-button" onClick={() => handleLanguageSelect('en')}>English</button>
+        <div className="language-selection-container">
+          <img src="/Solivagus Cover.png" alt="Solivagus" className="cover-image"/>
+          <h1>Solivagus</h1>
+          <div className="language-buttons">
+            <button onClick={() => handleLanguageSelect('tr')}>Türkçe</button>
+            <button onClick={() => handleLanguageSelect('en')}>English</button>
           </div>
         </div>
       );
@@ -152,7 +170,7 @@ function App() {
 
     if (gameState && gameState.scene && gameState.question && Array.isArray(gameState.options)) {
       return (
-        <>
+        <header className="App-header">
           <p className="theme-name">{currentTheme}</p>
           <p className="scene">{gameState.scene}</p>
           <p className="question">{gameState.question}</p>
@@ -163,15 +181,16 @@ function App() {
               </button>
             ))}
           </div>
-        </>
+        </header>
       );
     }
 
-    return null;
+    return null; // Hiçbir koşul karşılanmazsa
   };
 
   return (
     <div className={`App ${isFading ? 'fade-out' : 'fade-in'}`}>
+      <audio ref={audioRef} onEnded={handleTrackEnded} />
       {renderContent()}
     </div>
   );
